@@ -199,3 +199,398 @@ Body de `POST /admins`:
   "password": "123456"
 }
 ```
+
+---
+
+# CAMPEONATO
+
+Modulo para administrar partidos, fixture, tabla de posiciones, goleadores y tarjetas.
+
+## Tipos y enums
+
+- `estado` (Match): `"PROGRAMADO"` (default al crear) | `"FINALIZADO"` (se setea al cargar resultado).
+- `tipo` (MatchEvent): `"GOL"` | `"AMARILLA"` | `"AZUL"` | `"ROJA"`.
+- `fecha`: ISO 8601 en UTC (ej. `"2026-06-01T18:00:00.000Z"`). Puede ser `null` (partido sin programar).
+- Las tarjetas son **solo conteo visual**. No hay logica de suspension automatica.
+
+## Errores comunes
+
+| Codigo | Cuando ocurre |
+|--------|---------------|
+| 400 | DTO invalido, equipo local == visitante, jugador no pertenece a ninguno de los equipos del partido, tipo de tarjeta invalido. |
+| 401 | Falta `Authorization: Bearer ...` o token no es de admin (en rutas admin). |
+| 404 | Partido / categoria / jugador / evento no encontrado. |
+| 409 | `POST /fixture/generate` y ya existen partidos para esa categoria (envia `sobrescribir: true` para regenerar). |
+
+---
+
+## Matches
+
+| Metodo | Ruta | Auth | Descripcion |
+|--------|------|------|-------------|
+| GET | `/matches` | - | Lista partidos. Filtros: `?categoryId=&jornada=&estado=&fecha=YYYY-MM-DD`. |
+| GET | `/matches/:id` | - | Detalle del partido con equipos y eventos. |
+| POST | `/matches` | Bearer admin | Crea un partido manualmente. |
+| PATCH | `/matches/:id` | Bearer admin | Edita jornada, fecha, cancha o equipos. |
+| DELETE | `/matches/:id` | Bearer admin | Elimina partido (cascadea eventos). |
+| PATCH | `/matches/:id/resultado` | Bearer admin | Carga marcador y marca `FINALIZADO`. |
+| POST | `/matches/:id/eventos` | Bearer admin | Registra un gol o tarjeta de un jugador. |
+| DELETE | `/matches/:id/eventos/:eventId` | Bearer admin | Borra un evento mal cargado. |
+
+### `GET /matches`
+
+Query params (todos opcionales):
+
+| Param | Tipo | Descripcion |
+|-------|------|-------------|
+| `categoryId` | number | Filtra por categoria. |
+| `jornada` | number | Filtra por numero de jornada. |
+| `estado` | string | `PROGRAMADO` o `FINALIZADO`. |
+| `fecha` | `YYYY-MM-DD` | Filtra por dia (rango UTC `[fecha, fecha+1)`). |
+
+Orden de respuesta: `jornada ASC, fecha ASC, id ASC`.
+
+Response 200:
+
+```json
+[
+  {
+    "id": 12,
+    "categoryId": 1,
+    "jornada": 1,
+    "fecha": "2026-06-01T18:00:00.000Z",
+    "cancha": "Cancha 1",
+    "homeTeamId": 5,
+    "awayTeamId": 7,
+    "homeGoals": 2,
+    "awayGoals": 1,
+    "estado": "FINALIZADO",
+    "category": { "id": 1, "nombre": "Senior" },
+    "homeTeam": {
+      "id": 5,
+      "nombre": "Los Halcones",
+      "categoryId": 1,
+      "professionalCollegeId": 3,
+      "professionalCollege": { "id": 3, "nombre": "CIP", "abreviatura": "CIP" }
+    },
+    "awayTeam": { "id": 7, "nombre": "Aguilas", "professionalCollege": { "...": "..." } },
+    "events": [
+      {
+        "id": 41,
+        "matchId": 12,
+        "playerId": 88,
+        "teamId": 5,
+        "tipo": "GOL",
+        "minuto": 23,
+        "player": { "id": 88, "nombres": "Juan", "apellido_paterno": "Perez", "...": "..." },
+        "team": { "id": 5, "nombre": "Los Halcones", "...": "..." }
+      }
+    ]
+  }
+]
+```
+
+### `GET /matches/:id`
+
+Mismo shape de cada item del array anterior. `404` si no existe.
+
+### `POST /matches`  (Bearer admin)
+
+Body:
+
+```json
+{
+  "categoryId": 1,
+  "jornada": 1,
+  "homeTeamId": 5,
+  "awayTeamId": 7,
+  "fecha": "2026-06-01T18:00:00.000Z",
+  "cancha": "Cancha 1"
+}
+```
+
+| Campo | Tipo | Obligatorio | Notas |
+|-------|------|-------------|-------|
+| `categoryId` | number | si | |
+| `jornada` | number ≥ 1 | si | |
+| `homeTeamId` | number | si | distinto de `awayTeamId`. |
+| `awayTeamId` | number | si | distinto de `homeTeamId`. |
+| `fecha` | string ISO | no | `null` = sin programar. |
+| `cancha` | string ≤ 200 | no | |
+
+Response 201: mismo shape de `GET /matches/:id`.
+
+### `PATCH /matches/:id`  (Bearer admin)
+
+Body (todos opcionales):
+
+```json
+{
+  "jornada": 2,
+  "homeTeamId": 5,
+  "awayTeamId": 7,
+  "fecha": "2026-06-08T18:00:00.000Z",
+  "cancha": "Cancha 2"
+}
+```
+
+Mandar `fecha: null` para desprogramar. Response: mismo shape del detalle.
+
+### `DELETE /matches/:id`  (Bearer admin)
+
+Elimina el partido y cascadea sus `events`. Response 200 con el registro borrado.
+
+### `PATCH /matches/:id/resultado`  (Bearer admin)
+
+Body:
+
+```json
+{ "homeGoals": 2, "awayGoals": 1 }
+```
+
+| Campo | Tipo | Obligatorio | Notas |
+|-------|------|-------------|-------|
+| `homeGoals` | number ≥ 0 | si | |
+| `awayGoals` | number ≥ 0 | si | |
+
+Marca el partido como `FINALIZADO`. Response: mismo shape del detalle, ya con los goles y estado actualizados.
+
+### `POST /matches/:id/eventos`  (Bearer admin)
+
+Body:
+
+```json
+{ "playerId": 12, "tipo": "GOL", "minuto": 23 }
+```
+
+| Campo | Tipo | Obligatorio | Notas |
+|-------|------|-------------|-------|
+| `playerId` | number | si | El jugador debe pertenecer al equipo local o visitante del partido (si no, `400`). |
+| `tipo` | enum | si | `"GOL"` \| `"AMARILLA"` \| `"AZUL"` \| `"ROJA"`. |
+| `minuto` | number ≥ 0 | no | |
+
+El backend infiere `teamId` desde el jugador, no hace falta enviarlo.
+
+Response 201:
+
+```json
+{
+  "id": 41,
+  "matchId": 12,
+  "playerId": 12,
+  "teamId": 5,
+  "tipo": "GOL",
+  "minuto": 23,
+  "player": { "id": 12, "nombres": "Juan", "apellido_paterno": "Perez", "...": "..." },
+  "team": { "id": 5, "nombre": "Los Halcones", "...": "..." }
+}
+```
+
+**Nota:** el endpoint **no** recalcula automaticamente el marcador del partido. Si registras goles, debes seguir llamando `PATCH /matches/:id/resultado` con el marcador final.
+
+### `DELETE /matches/:id/eventos/:eventId`  (Bearer admin)
+
+Valida que el `eventId` pertenezca al `:id` del partido (si no, `400`). Response 200 con el evento borrado.
+
+---
+
+## Fixture
+
+| Metodo | Ruta | Auth | Descripcion |
+|--------|------|------|-------------|
+| GET | `/fixture?categoryId=` | - | Devuelve los partidos agrupados por jornada. |
+| POST | `/fixture/generate` | Bearer admin | Genera fixture round-robin (todos vs todos) para la categoria. |
+
+### `GET /fixture?categoryId=`
+
+Query: `categoryId` obligatorio.
+
+Response 200:
+
+```json
+{
+  "category": { "id": 1, "nombre": "Senior" },
+  "totalJornadas": 5,
+  "totalPartidos": 15,
+  "jornadas": [
+    {
+      "numero": 1,
+      "partidos": [
+        {
+          "id": 12,
+          "categoryId": 1,
+          "jornada": 1,
+          "fecha": "2026-06-01T18:00:00.000Z",
+          "cancha": "Cancha 1",
+          "homeTeamId": 5,
+          "awayTeamId": 7,
+          "homeGoals": null,
+          "awayGoals": null,
+          "estado": "PROGRAMADO",
+          "homeTeam": { "id": 5, "nombre": "Los Halcones", "...": "..." },
+          "awayTeam": { "id": 7, "nombre": "Aguilas", "...": "..." }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Si la categoria no existe: `404`.
+
+### `POST /fixture/generate`  (Bearer admin)
+
+Body:
+
+```json
+{ "categoryId": 1, "sobrescribir": false }
+```
+
+| Campo | Tipo | Obligatorio | Notas |
+|-------|------|-------------|-------|
+| `categoryId` | number | si | Debe tener ≥ 2 equipos asignados. |
+| `sobrescribir` | boolean | no (default `false`) | Si `true` y ya hay partidos en esa categoria, los **borra todos** (incluidos sus eventos) y regenera. |
+
+Algoritmo: round-robin round-by-round. Con `N` equipos genera `N-1` jornadas con `N/2` partidos cada una (si `N` es impar, una "fecha libre" por jornada). Alterna local/visitante en jornadas pares/impares para balancear. Todos los partidos se crean con `estado="PROGRAMADO"`, `fecha=null`, `cancha=null` — el admin completa esos campos despues con `PATCH /matches/:id`.
+
+Response 200:
+
+```json
+{
+  "categoryId": 1,
+  "equipos": 6,
+  "jornadas": 5,
+  "partidosCreados": 15
+}
+```
+
+Errores:
+- `400`: menos de 2 equipos en la categoria.
+- `404`: categoria no existe.
+- `409`: ya hay partidos en la categoria y no enviaste `sobrescribir: true`.
+
+---
+
+## Standings
+
+| Metodo | Ruta | Auth | Descripcion |
+|--------|------|------|-------------|
+| GET | `/standings?categoryId=` | - | Tabla de posiciones calculada (3-1-0). Orden: pts -> dg -> gf -> nombre. |
+
+Solo cuenta partidos con `estado="FINALIZADO"` y goles cargados. Los partidos en `PROGRAMADO` no se incluyen.
+
+Response 200:
+
+```json
+{
+  "category": { "id": 1, "nombre": "Senior" },
+  "standings": [
+    {
+      "posicion": 1,
+      "teamId": 5,
+      "nombre": "Los Halcones",
+      "pj": 5,
+      "pg": 4,
+      "pe": 1,
+      "pp": 0,
+      "gf": 12,
+      "gc": 3,
+      "dg": 9,
+      "pts": 13
+    },
+    {
+      "posicion": 2,
+      "teamId": 7,
+      "nombre": "Aguilas",
+      "pj": 5, "pg": 3, "pe": 1, "pp": 1, "gf": 9, "gc": 6, "dg": 3, "pts": 10
+    }
+  ]
+}
+```
+
+Significado de columnas:
+
+| Col | Descripcion |
+|-----|-------------|
+| `posicion` | Posicion en la tabla (1 = primero). |
+| `pj` | Partidos jugados. |
+| `pg` / `pe` / `pp` | Ganados / empatados / perdidos. |
+| `gf` / `gc` | Goles a favor / en contra. |
+| `dg` | Diferencia de gol (`gf - gc`). |
+| `pts` | Puntos (3 por victoria, 1 por empate, 0 por derrota). |
+
+Equipos sin partidos jugados aparecen al final con todo en `0`. Si la categoria no existe: `404`.
+
+---
+
+## Stats (goleadores y tarjetas)
+
+| Metodo | Ruta | Auth | Descripcion |
+|--------|------|------|-------------|
+| GET | `/scorers?categoryId=` | - | Goleadores de la categoria ordenados por cantidad de goles. |
+| GET | `/cards?categoryId=&tipo=` | - | Tarjetas por jugador. `tipo` opcional. |
+
+### `GET /scorers?categoryId=`
+
+Cuenta todos los eventos `tipo="GOL"` cuyo partido pertenece a la categoria (sin importar el estado del partido).
+
+Response 200:
+
+```json
+[
+  {
+    "goles": 7,
+    "jugador": {
+      "id": 12,
+      "nombres": "Juan",
+      "apellido_paterno": "Perez",
+      "apellido_materno": "Ramos",
+      "dni": "87654321",
+      "foto_url": "https://...",
+      "teamId": 5,
+      "team": {
+        "id": 5,
+        "nombre": "Los Halcones",
+        "category": { "id": 1, "nombre": "Senior" },
+        "professionalCollege": { "id": 3, "nombre": "CIP", "abreviatura": "CIP" }
+      }
+    }
+  },
+  { "goles": 4, "jugador": { "...": "..." } }
+]
+```
+
+Orden: descendente por `goles`. Si la categoria no existe: `404`.
+
+### `GET /cards?categoryId=&tipo=`
+
+**Sin `tipo`** (devuelve conteo de las tres tarjetas por jugador):
+
+```json
+[
+  {
+    "amarillas": 3,
+    "azules": 1,
+    "rojas": 0,
+    "total": 4,
+    "jugador": { "id": 12, "nombres": "Juan", "...": "..." }
+  }
+]
+```
+
+Orden: `total DESC, rojas DESC, azules DESC, amarillas DESC`.
+
+**Con `tipo=AMARILLA|AZUL|ROJA`** (solo ese color):
+
+```json
+[
+  { "cantidad": 3, "tipo": "AMARILLA", "jugador": { "...": "..." } },
+  { "cantidad": 2, "tipo": "AMARILLA", "jugador": { "...": "..." } }
+]
+```
+
+Orden: descendente por `cantidad`.
+
+Errores:
+- `400`: `tipo` invalido (no es `AMARILLA`, `AZUL` ni `ROJA`).
+- `404`: categoria no existe.

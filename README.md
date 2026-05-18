@@ -346,6 +346,22 @@ Devuelve el admin autenticado con:
 Authorization: Bearer TOKEN
 ```
 
+### Campeonato (partidos, fixture, tabla, goleadores, tarjetas)
+
+Modelos `Match` y `MatchEvent`. Ver detalle en `ENDPOINTS.md`.
+
+Resumen rapido:
+
+- `POST /fixture/generate` (admin) genera round-robin de una categoria.
+- `PATCH /matches/:id` (admin) edita fecha, cancha, jornada o equipos.
+- `PATCH /matches/:id/resultado` (admin) carga marcador y deja el partido `FINALIZADO`.
+- `POST /matches/:id/eventos` (admin) registra `GOL`, `AMARILLA`, `AZUL` o `ROJA` para un jugador.
+- `GET /standings?categoryId=` calcula PJ/PG/PE/PP/GF/GC/DG/Pts (3-1-0).
+- `GET /scorers?categoryId=` y `GET /cards?categoryId=` para reportes por jugador.
+- `GET /fixture?categoryId=` devuelve partidos agrupados por jornada.
+
+Las tarjetas son solo conteo visual; no hay sancion automatica por acumulacion.
+
 ## Notas
 
 - el backend ya envia el link de continuidad por correo usando Resend

@@ -136,12 +136,20 @@ export class PlayersService {
       await this.ensurePlayerDniIsAvailable(data.dni, id);
     }
 
+    const { fecha_nacimiento, ...rest } = data;
+    const prismaData = {
+      ...rest,
+      ...(fecha_nacimiento !== undefined
+        ? { fecha_nacimiento: fecha_nacimiento ? new Date(fecha_nacimiento) : null }
+        : {}),
+    };
+
     try {
       const player = await this.prisma.player.update({
         where: {
           id,
         },
-        data,
+        data: prismaData,
         include: {
           team: {
             include: {
@@ -242,7 +250,9 @@ export class PlayersService {
           apellido_materno: data.apellido_materno,
           dni: data.dni,
           nro_colegiatura: data.nro_colegiatura,
-          edad: data.edad,
+          fecha_nacimiento: data.fecha_nacimiento
+            ? new Date(data.fecha_nacimiento)
+            : null,
           foto_url: data.foto_url,
           codigo_carnet: await this.generateUniqueCarnetCode(),
           teamId,
@@ -382,7 +392,7 @@ export class PlayersService {
     apellido_materno: string;
     dni: string;
     nro_colegiatura: string | null;
-    edad: number | null;
+    fecha_nacimiento: Date | null;
     foto_url: string | null;
     codigo_carnet: string | null;
     carnet_activo: boolean;
@@ -405,7 +415,9 @@ export class PlayersService {
       apellido_materno: player.apellido_materno,
       dni: player.dni,
       nro_colegiatura: player.nro_colegiatura,
-      edad: player.edad,
+      fecha_nacimiento: player.fecha_nacimiento
+        ? player.fecha_nacimiento.toISOString().slice(0, 10)
+        : null,
       foto_url: player.foto_url,
       codigo_carnet: player.codigo_carnet,
       carnet_activo: player.carnet_activo,
@@ -432,7 +444,7 @@ export class PlayersService {
     apellido_materno: string;
     dni: string;
     nro_colegiatura: string | null;
-    edad: number | null;
+    fecha_nacimiento: Date | null;
     foto_url: string | null;
     codigo_carnet: string | null;
     carnet_activo: boolean;
@@ -468,7 +480,9 @@ export class PlayersService {
         apellido_materno: player.apellido_materno,
         dni: player.dni,
         nro_colegiatura: player.nro_colegiatura,
-        edad: player.edad,
+        fecha_nacimiento: player.fecha_nacimiento
+          ? player.fecha_nacimiento.toISOString().slice(0, 10)
+          : null,
         foto_url: player.foto_url,
         codigo_carnet: player.codigo_carnet,
         carnet_activo: player.carnet_activo,

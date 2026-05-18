@@ -101,7 +101,7 @@ Body de `POST /delegate/players` (campos del form):
   "apellido_materno": "Ramos",
   "dni": "87654321",
   "nro_colegiatura": "CAL-12345",
-  "edad": 35
+  "fecha_nacimiento": "1990-05-12"
 }
 ```
 

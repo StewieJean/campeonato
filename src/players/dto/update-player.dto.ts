@@ -1,14 +1,11 @@
 import {
-  IsInt,
+  IsDateString,
   IsOptional,
   IsString,
   Length,
-  Max,
   MaxLength,
-  Min,
   IsUrl,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export class UpdatePlayerDto {
   @IsOptional()
@@ -37,11 +34,8 @@ export class UpdatePlayerDto {
   nro_colegiatura?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(10)
-  @Max(100)
-  edad?: number;
+  @IsDateString()
+  fecha_nacimiento?: string;
 
   @IsOptional()
   @IsUrl()

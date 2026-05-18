@@ -78,7 +78,7 @@ model Player {
   apellido_materno  String  @default("")
   dni               String  @unique
   nro_colegiatura   String?
-  edad              Int?
+  fecha_nacimiento  DateTime? @db.Date
   foto_url          String?
   codigo_carnet     String? @unique
   carnet_activo     Boolean @default(true)
